@@ -60,7 +60,7 @@ class MyDataset(Dataset):
             label = shape["label"]
             points = np.array(shape["points"], dtype=int)
             mask = cv2.fillPoly(mask, [points], 1)
-            masks.append(mask)
+            masks.append(mask)                  # [mask(540,720), mask(540,720), mask(540,720), ..., mask(540,720)] : shape=(10, 540, 720)
             labels.append(self.class_ids[label])
             xmin, ymin = np.min(points, axis=0)
             xmax, ymax = np.max(points, axis=0)
