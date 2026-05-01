@@ -16,7 +16,7 @@ from torchvision.models.detection import maskrcnn_resnet50_fpn_v2, MaskRCNN_ResN
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
 from torch.amp import GradScaler
-from tools.engine import train_one_epoch, evaluate
+from tools.engine import train_one_epoch, evaluate, test_one_epoch
 from torchvision.transforms import v2 as T
 from PIL import Image
 from torchvision.utils import draw_bounding_boxes, draw_segmentation_masks
@@ -26,7 +26,11 @@ from torchvision import tv_tensors
 def get_transform(train):
     transforms = []
     if train:
+        transforms.append(T.RandomRotation(degrees=(-5,5)))
         transforms.append(T.RandomHorizontalFlip(0.5))
+        transforms.append(T.RandomVerticalFlip(0.5))
+        transforms.append(T.ColorJitter(brightness=0.2, contrast=0.2))
+
     transforms.append(T.ToDtype(torch.float, scale=True))
     transforms.append(T.Resize((256,256)))
     transforms.append(T.ToPureTensor())
@@ -36,8 +40,8 @@ def main(args):
 
     n_classes = 2
 
-    train_dataset = MyDataset(dataset_dir=os.path.join("sample_dataset", "train"), transforms=get_transform(train=True))
-    test_dataset = MyDataset(dataset_dir=os.path.join("sample_dataset", "test"), transforms=get_transform(train=False))
+    train_dataset = MyDataset(dataset_dir=os.path.join("annotations", "train"), transforms=get_transform(train=True))
+    test_dataset = MyDataset(dataset_dir=os.path.join("annotations", "test"), transforms=get_transform(train=False))
 
     batch_size = args.batch_size
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
@@ -72,18 +76,31 @@ def main(args):
     
     train_losses = []
     test_losses = []
+    best_test_loss = np.inf
     if args.command=='train':
         for epoch in range(num_epochs):
             print(f"Epoch: {epoch} / {num_epochs-1}")
 
             # train for one epoch, printing every 10 iterations
             train_logger, train_loss = train_one_epoch(model, optimizer, train_loader, device, epoch, print_freq=10, scaler=scaler)
+            test_logger, test_loss = test_one_epoch(model, test_loader, device, epoch, print_freq=10)
             
-            
+            train_losses.append(train_loss)
+            test_losses.append(test_loss)
+
+            print(f"Train Loss: {train_loss:.4f}\tTest Loss: {test_loss:.4f}")
+
+            if test_loss < best_test_loss:
+                best_test_loss = test_loss
+                os.makedirs('output', exist_ok=True)
+                torch.save(model.state_dict(), os.path.join('output', 'model_best.pth'))
+
             # update the learning rate
             lr_scheduler.step()
             # evaluate on the test dataset
-            evaluate(model, test_loader, device=device)
+            # evaluate(model, test_loader, device=device)
+
+            save_loss_curve(train_losses, test_losses)
 
     if args.command=='test':
         print("This is test mode.")
@@ -95,29 +112,26 @@ def main(args):
         image_paths = glob(os.path.join('sample_dataset', 'test', '*.bmp'))
         idx = 0
 
+        eval_transform = get_transform(train=False)
+
         while True:
             image_path = image_paths[idx]
             # image = cv2.imread(image_path)
             image = Image.open(image_path)
-            eval_transform = get_transform(train=False)
-
+            image = tv_tensors.Image(image)            
+            image = eval_transform(image)
             model.eval()
             with torch.no_grad():
-                x = eval_transform(image)
-                # convert RGBA -> RGB and move to device
-                x = x[:3, ...].to(device)
-                predictions = model([x, ])
-                pred = predictions[0]
+                predictions = model([image.to(device)])
+            pred = predictions[0]
+            mask = (pred['masks'][0][0].cpu().numpy()*255).astype(np.uint8)
+            cv2.imshow('mask', mask)
+            cv2.waitKey()
 
-
-            # image = (255.0 * (image - image.min()) / (image.max() - image.min())).to(torch.uint8)
-            # image = image[:3, ...]
-            image = tv_tensors.Image(image)
-            image = eval_transform(image)
             pred_labels = [f"{label}: {score:.3f}" for label, score in zip(pred["labels"], pred["scores"])]
             pred_boxes = pred["boxes"].long()
-            output_image = draw_bounding_boxes(image, pred_boxes, pred_labels, colors="red")
 
+            output_image = draw_bounding_boxes(image, pred_boxes, pred_labels, colors="red")
             masks = (pred["masks"] > 0.7).squeeze(1)
             output_image = draw_segmentation_masks(output_image, masks, alpha=0.5, colors="green")
             output_image = output_image.permute(1, 2, 0).numpy()    #[c, h, w] --> [h, w, c]
@@ -135,7 +149,16 @@ def main(args):
             if idx > len(image_paths)-1:
                 idx = len(image_paths)
 
-
+def save_loss_curve(train_losses, test_losses):
+    plt.plot(train_losses, label='train loss', marker='.')
+    plt.plot(test_losses, label='test loss', marker='.')
+    plt.grid()
+    plt.legend()
+    plt.xlabel('Epochs')
+    plt.ylabel('loss')
+    plt.title("Loss Curve")
+    plt.savefig("loss_curve.png")
+    plt.close()
 
 
 

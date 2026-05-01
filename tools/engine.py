@@ -7,6 +7,7 @@ import torchvision.models.detection.mask_rcnn
 import tools.utils as utils
 from tools.coco_eval import CocoEvaluator
 from tools.coco_utils import get_coco_api_from_dataset
+from tqdm import tqdm
 
 def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq, scaler=None):
     model.train()
@@ -25,22 +26,23 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq, sc
 
     loss_list = []
 
-    for images, targets in metric_logger.log_every(data_loader, print_freq, header):
+    # for images, targets in metric_logger.log_every(data_loader, print_freq, header):
+    for images, targets in tqdm(data_loader):
         images = list(image.to(device) for image in images)
         targets = [{k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in t.items()} for t in targets]
         with torch.amp.autocast(device_type=device.type, enabled=scaler is not None):
             loss_dict = model(images, targets)
             losses = sum(loss for loss in loss_dict.values())
-            print('loss_dict', loss_dict)
-            print('losses', losses)
 
         # reduce losses over all GPUs for logging purposes
         loss_dict_reduced = utils.reduce_dict(loss_dict)
         losses_reduced = sum(loss for loss in loss_dict_reduced.values())
 
         loss_value = losses_reduced.item()
-        print('loss_value', loss_value)
-        exit()
+        # print('loss_dict', loss_dict)
+        # print('losses', losses)
+        # print('loss_value', loss_value)
+        # exit()
 
         if not math.isfinite(loss_value):
             print(f"Loss is {loss_value}, stopping training")
@@ -69,13 +71,14 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq, sc
     return metric_logger, loss_mean
 
 def test_one_epoch(model, data_loader, device, epoch, print_freq):
-    model.eval()
+    model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = f"Epoch: [{epoch}] in test..."
     
     loss_list = []
 
-    for images, targets in metric_logger.log_every(data_loader, print_freq, header):
+    # for images, targets in metric_logger.log_every(data_loader, print_freq, header):
+    for images, targets in tqdm(data_loader):
         images = list(image.to(device) for image in images)
         targets = [{k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in t.items()} for t in targets]
         with torch.no_grad():

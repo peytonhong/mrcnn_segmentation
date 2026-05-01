@@ -2,4 +2,6 @@ __pycache__
 .vscode
 sample_dataset
 temp
-
+annotations
+output
+loss_curve.png
