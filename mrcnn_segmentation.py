@@ -168,7 +168,7 @@ def argparse_args():
     desc = "Pytorch implementation of 'Mask R-CNN Image Segmentation'"
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('command', help="'train' or 'test' or 'labeling'")
-    parser.add_argument('--num_epochs', default=1000, type=int, help="The number of epochs to run")
+    parser.add_argument('--num_epochs', default=300, type=int, help="The number of epochs to run")
     parser.add_argument('--batch_size', default=4, type=int, help="The number of mini-batchs for each epoch")
     return parser.parse_args()
 
