@@ -158,7 +158,7 @@ def save_loss_curve(train_losses, test_losses):
     plt.grid()
     plt.legend()
     plt.xlabel('Epochs')
-    plt.ylabel('loss')
+    plt.ylabel('Loss')
     plt.title("Loss Curve")
     plt.savefig("loss_curve.png")
     plt.close()
