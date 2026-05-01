@@ -21,14 +21,15 @@ from torchvision.transforms import v2 as T
 from PIL import Image
 from torchvision.utils import draw_bounding_boxes, draw_segmentation_masks
 from tools.utils import collate_fn
+from torchvision import tv_tensors
 
 def get_transform(train):
     transforms = []
     if train:
         transforms.append(T.RandomHorizontalFlip(0.5))
     transforms.append(T.ToDtype(torch.float, scale=True))
-    transforms.append(T.ToPureTensor())
     transforms.append(T.Resize((256,256)))
+    transforms.append(T.ToPureTensor())
     return T.Compose(transforms)
 
 def main(args):    
@@ -68,13 +69,17 @@ def main(args):
     num_epochs = args.num_epochs
 
     scaler = GradScaler()
-
+    
+    train_losses = []
+    test_losses = []
     if args.command=='train':
         for epoch in range(num_epochs):
             print(f"Epoch: {epoch} / {num_epochs-1}")
 
             # train for one epoch, printing every 10 iterations
-            train_one_epoch(model, optimizer, train_loader, device, epoch, print_freq=10, scaler=scaler)
+            train_logger, train_loss = train_one_epoch(model, optimizer, train_loader, device, epoch, print_freq=10, scaler=scaler)
+            
+            
             # update the learning rate
             lr_scheduler.step()
             # evaluate on the test dataset
@@ -105,15 +110,17 @@ def main(args):
                 pred = predictions[0]
 
 
-            image = (255.0 * (image - image.min()) / (image.max() - image.min())).to(torch.uint8)
-            image = image[:3, ...]
+            # image = (255.0 * (image - image.min()) / (image.max() - image.min())).to(torch.uint8)
+            # image = image[:3, ...]
+            image = tv_tensors.Image(image)
+            image = eval_transform(image)
             pred_labels = [f"{label}: {score:.3f}" for label, score in zip(pred["labels"], pred["scores"])]
             pred_boxes = pred["boxes"].long()
             output_image = draw_bounding_boxes(image, pred_boxes, pred_labels, colors="red")
 
             masks = (pred["masks"] > 0.7).squeeze(1)
             output_image = draw_segmentation_masks(output_image, masks, alpha=0.5, colors="green")
-            output_image = output_image.permute(1, 2, 0).numpy()
+            output_image = output_image.permute(1, 2, 0).numpy()    #[c, h, w] --> [h, w, c]
 
             cv2.imshow('output_image', output_image)
             key = cv2.waitKey()

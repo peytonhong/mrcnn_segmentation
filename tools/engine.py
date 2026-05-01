@@ -12,7 +12,7 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq, sc
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", utils.SmoothedValue(window_size=1, fmt="{value:.6f}"))
-    header = f"Epoch: [{epoch}]"
+    header = f"Epoch: [{epoch}] in training..."
 
     lr_scheduler = None
     if epoch == 0:
@@ -23,23 +23,31 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq, sc
             optimizer, start_factor=warmup_factor, total_iters=warmup_iters
         )
 
+    loss_list = []
+
     for images, targets in metric_logger.log_every(data_loader, print_freq, header):
         images = list(image.to(device) for image in images)
         targets = [{k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in t.items()} for t in targets]
         with torch.amp.autocast(device_type=device.type, enabled=scaler is not None):
             loss_dict = model(images, targets)
             losses = sum(loss for loss in loss_dict.values())
+            print('loss_dict', loss_dict)
+            print('losses', losses)
 
         # reduce losses over all GPUs for logging purposes
         loss_dict_reduced = utils.reduce_dict(loss_dict)
         losses_reduced = sum(loss for loss in loss_dict_reduced.values())
 
         loss_value = losses_reduced.item()
+        print('loss_value', loss_value)
+        exit()
 
         if not math.isfinite(loss_value):
             print(f"Loss is {loss_value}, stopping training")
             print(loss_dict_reduced)
             sys.exit(1)
+
+        loss_list.append(loss_value*len(images))
 
         optimizer.zero_grad()
         if scaler is not None:
@@ -55,9 +63,43 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq, sc
 
         metric_logger.update(loss=losses_reduced, **loss_dict_reduced)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+    
+    loss_mean = sum(loss_list)/len(loss_list)
+    
+    return metric_logger, loss_mean
 
-    return metric_logger
+def test_one_epoch(model, data_loader, device, epoch, print_freq):
+    model.eval()
+    metric_logger = utils.MetricLogger(delimiter="  ")
+    header = f"Epoch: [{epoch}] in test..."
+    
+    loss_list = []
 
+    for images, targets in metric_logger.log_every(data_loader, print_freq, header):
+        images = list(image.to(device) for image in images)
+        targets = [{k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in t.items()} for t in targets]
+        with torch.no_grad():
+            loss_dict = model(images, targets)
+            losses = sum(loss for loss in loss_dict.values())
+
+        # reduce losses over all GPUs for logging purposes
+        loss_dict_reduced = utils.reduce_dict(loss_dict)
+        losses_reduced = sum(loss for loss in loss_dict_reduced.values())
+
+        loss_value = losses_reduced.item()
+
+        if not math.isfinite(loss_value):
+            print(f"Loss is {loss_value}, stopping testing")
+            print(loss_dict_reduced)
+            sys.exit(1)
+
+        loss_list.append(loss_value*len(images))
+
+        metric_logger.update(loss=losses_reduced, **loss_dict_reduced)
+
+    loss_mean = sum(loss_list)/len(loss_list)
+
+    return metric_logger, loss_mean
 
 def _get_iou_types(model):
     model_without_ddp = model
