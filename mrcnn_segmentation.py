@@ -84,8 +84,8 @@ def main(args):
             current_lr = lr_scheduler.get_last_lr()[0]
             print("current_lr:", current_lr)
 
-            train_logger, train_loss = train_one_epoch(model, optimizer, train_loader, device, epoch, scaler=scaler)
-            test_logger, test_loss = test_one_epoch(model, test_loader, device, epoch)
+            train_logger, train_loss = train_one_epoch(model, optimizer, train_loader, device, scaler=scaler)
+            test_logger, test_loss = test_one_epoch(model, test_loader, device)
             
             train_losses.append(train_loss)
             test_losses.append(test_loss)
@@ -132,7 +132,7 @@ def main(args):
             pred_boxes = pred["boxes"].long()
 
             output_image = draw_bounding_boxes(image, pred_boxes, pred_labels, colors="red")
-            masks = (pred["masks"] > 0.7).squeeze(1)
+            masks = (pred["masks"] > 0.2).squeeze(1)
             output_image = draw_segmentation_masks(output_image, masks, alpha=0.5, colors="green")
             output_image = output_image.permute(1, 2, 0).numpy()    #[c, h, w] --> [h, w, c]
 

@@ -9,7 +9,7 @@ from tools.coco_eval import CocoEvaluator
 from tools.coco_utils import get_coco_api_from_dataset
 from tqdm import tqdm
 
-def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None):
+def train_one_epoch(model, optimizer, data_loader, device, scaler=None):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", utils.SmoothedValue(window_size=1, fmt="{value:.6f}"))
@@ -21,6 +21,8 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None):
         targets = [{k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in t.items()} for t in targets]
         with torch.amp.autocast(device_type=device.type, enabled=scaler is not None):
             loss_dict = model(images, targets)
+            print(loss_dict)
+            exit()
             losses = sum(loss for loss in loss_dict.values())
 
         # reduce losses over all GPUs for logging purposes
@@ -50,7 +52,7 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, scaler=None):
     
     return metric_logger, loss_mean
 
-def test_one_epoch(model, data_loader, device, epoch):
+def test_one_epoch(model, data_loader, device):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     
