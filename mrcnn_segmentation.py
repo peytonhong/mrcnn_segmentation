@@ -40,8 +40,8 @@ def main(args):
 
     n_classes = 2
 
-    train_dataset = MyDataset(dataset_dir=os.path.join("annotations", "train"), transforms=get_transform(train=True))
-    test_dataset = MyDataset(dataset_dir=os.path.join("annotations", "test"), transforms=get_transform(train=False))
+    train_dataset = MyDataset(dataset_dir=os.path.join("sample_dataset", "train"), transforms=get_transform(train=True))
+    test_dataset = MyDataset(dataset_dir=os.path.join("sample_dataset", "test"), transforms=get_transform(train=False))
 
     batch_size = args.batch_size
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
@@ -116,27 +116,39 @@ def main(args):
 
         while True:
             image_path = image_paths[idx]
-            # image = cv2.imread(image_path)
+            
             image = Image.open(image_path)
             image = tv_tensors.Image(image)            
             image = eval_transform(image)
             model.eval()
             with torch.no_grad():
                 predictions = model([image.to(device)])
+                # print(predictions)
             pred = predictions[0]
-            mask = (pred['masks'][0][0].cpu().numpy()*255).astype(np.uint8)
-            cv2.imshow('mask', mask)
-            cv2.waitKey()
+            best_score_idx = torch.argmax(pred['scores']).item()
+            # print(pred['scores'], best_score_idx)
+            # print(pred['masks'], pred['masks'].shape)
+            image = cv2.imread(image_path)
+            h, w, c = image.shape
+            
+            masks = (pred["masks"] > 0.2)
+            mask = masks[0][best_score_idx].cpu().numpy().astype(np.uint8)*255
+            mask = cv2.resize(mask, (w,h))
+            
+            mask_on_image = draw_mask_on_image(image, mask)
 
-            pred_labels = [f"{label}: {score:.3f}" for label, score in zip(pred["labels"], pred["scores"])]
-            pred_boxes = pred["boxes"].long()
+            # cv2.imshow('mask', mask_resized)
+            # cv2.waitKey()
 
-            output_image = draw_bounding_boxes(image, pred_boxes, pred_labels, colors="red")
-            masks = (pred["masks"] > 0.2).squeeze(1)
-            output_image = draw_segmentation_masks(output_image, masks, alpha=0.5, colors="green")
-            output_image = output_image.permute(1, 2, 0).numpy()    #[c, h, w] --> [h, w, c]
+            # pred_labels = [f"{label}: {score:.3f}" for label, score in zip(pred["labels"], pred["scores"])]
+            # pred_boxes = pred["boxes"].long()
 
-            cv2.imshow('output_image', output_image)
+            # output_image = draw_bounding_boxes(image, pred_boxes, pred_labels, colors="red")
+            # masks = (pred["masks"] > 0.2).squeeze(1)
+            # output_image = draw_segmentation_masks(output_image, masks, alpha=0.5, colors="green")
+            # output_image = output_image.permute(1, 2, 0).numpy()    #[c, h, w] --> [h, w, c]
+
+            cv2.imshow('output_image', mask_on_image)
             key = cv2.waitKey()
             if key==ord('q'):
                 break
@@ -148,6 +160,16 @@ def main(args):
                 idx = 0
             if idx > len(image_paths)-1:
                 idx = len(image_paths)
+
+def draw_mask_on_image(image, mask):
+    color_mask = np.zeros_like(image)   # (540, 720, 3)
+    color_mask[:,:,1] = mask
+    indices = np.where(mask==255)
+    print(indices)
+    mask_on_image = cv2.addWeighted(image, 0.5, color_mask, 0.5, 0)
+    image[indices[0], indices[1]] = mask_on_image[indices[0], indices[1]]
+
+    return image
 
 def save_loss_curve(train_losses, test_losses):
     plt.plot(train_losses, label='Train Loss', marker='.')
